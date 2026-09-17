@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Магазин</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background-color: var(--tg-theme-bg-color, #f4f4f5); color: var(--tg-theme-text-color, #000); }
+  </style>
+</head>
+<body class="p-4 font-sans">
+
+  <!-- Шапка -->
+  <div class="flex justify-between items-center mb-4">
+    <h1 class="text-xl font-bold">Каталог товарів</h1>
+    <button id="admin-btn" onclick="toggleAdminPanel()" class="hidden bg-slate-800 text-white text-xs px-3 py-2 rounded-lg">
+      + Додати товар
+    </button>
+  </div>
+
+  <!-- Форма додати товар (Адмінка) -->
+  <div id="admin-panel" class="hidden bg-white p-4 rounded-xl shadow-md mb-6 border border-gray-200">
+    <h2 class="font-bold text-lg mb-3">Новий товар</h2>
+    <input id="p-title" type="text" placeholder="Назва товару" class="w-full mb-2 p-2 border rounded">
+    <input id="p-price" type="number" placeholder="Ціна (грн)" class="w-full mb-2 p-2 border rounded">
+    <input id="p-sizes" type="text" placeholder="Розміри через кому (S, M, L)" class="w-full mb-2 p-2 border rounded">
+    <textarea id="p-photos" placeholder="Посилання на фото (по одному в рядку, до 6 шт)" class="w-full mb-3 p-2 border rounded h-20"></textarea>
+    <button onclick="addProduct()" class="w-full bg-green-600 text-white py-2 rounded-lg font-medium">Зберегти товар</button>
+  </div>
+
+  <!-- Список товарів -->
+  <div id="catalog" class="space-y-4"></div>
+
+  <script>
+    const tg = window.Telegram.WebApp;
+    tg.expand();
+
+    // Вкажіть тут ваш Telegram ID та Username
+    const ADMIN_TELEGRAM_ID = "123456789"; // Замініть на свій Telegram ID
+    const SELLER_USERNAME = "your_telegram_username"; // Замініть на свій юзернейм без @
+
+    // Симуляція бази даних у локальному сховищі
+    let products = JSON.parse(localStorage.getItem('products')) || [
+      {
+        id: 1,
+        title: "Базова Футболка Black",
+        price: 750,
+        sizes: ["S", "M", "L"],
+        photos: ["https://picsum.photos/400/300?random=1"]
+      }
+    ];
+
+    // Перевірка на адміна
+    if (tg.initDataUnsafe?.user?.id == ADMIN_TELEGRAM_ID || true) { // temporary allow for testing
+      document.getElementById('admin-btn').classList.remove('hidden');
+    }
+
+    function saveProducts() {
+      localStorage.setItem('products', JSON.stringify(products));
+      renderCatalog();
+    }
+
+    function toggleAdminPanel() {
+      document.getElementById('admin-panel').classList.toggle('hidden');
+    }
+
+    function addProduct() {
+      const title = document.getElementById('p-title').value;
+      const price = document.getElementById('p-price').value;
+      const sizes = document.getElementById('p-sizes').value.split(',').map(s => s.trim()).filter(Boolean);
+      const photos = document.getElementById('p-photos').value.split('\n').map(p => p.trim()).filter(Boolean);
+
+      if(!title || !price) return alert('Заповніть назву та ціну');
+
+      products.push({
+        id: Date.now(),
+        title,
+        price,
+        sizes,
+        photos: photos.length ? photos : ["https://picsum.photos/400/300"]
+      });
+
+      saveProducts();
+      toggleAdminPanel();
+    }
+
+    function deleteProduct(id) {
+      products = products.filter(p => p.id !== id);
+      saveProducts();
+    }
+
+    function renderCatalog() {
+      const catalog = document.getElementById('catalog');
+      catalog.innerHTML = '';
+
+      products.forEach(p => {
+        const item = document.createElement('div');
+        item.className = "bg-white rounded-xl shadow p-3 border border-gray-100";
+        
+        let sizesHTML = p.sizes.map((s, idx) => `
+          <button onclick="selectSize(${p.id}, '${s}', this)" class="size-btn-${p.id} px-3 py-1 border text-sm rounded-md hover:bg-black hover:text-white transition">
+            ${s}
+          </button>
+        `).join('');
+
+        item.innerHTML = `
+          <img src="${p.photos[0]}" class="w-full h-48 object-cover rounded-lg mb-2">
+          <h3 class="font-bold text-lg">${p.title}</h3>
+          <p class="text-green-700 font-bold mb-2">${p.price} грн</p>
+          
+          <div class="mb-3">
+            <span class="text-xs text-gray-500 block mb-1">Розміри в наявності:</span>
+            <div class="flex gap-2">${sizesHTML || 'Немає в наявності'}</div>
+          </div>
+
+          <button id="buy-btn-${p.id}" disabled onclick="orderProduct('${p.title}', ${p.price})" class="w-full bg-gray-300 text-gray-500 py-2 rounded-lg font-bold">
+            Оберіть розмір
+          </button>
+          
+          <button onclick="deleteProduct(${p.id})" class="w-full text-red-500 text-xs mt-2 text-center">Видалити товар</button>
+        `;
+        catalog.appendChild(item);
+      });
+    }
+
+    let selectedSizes = {};
+
+    function selectSize(productId, size, btn) {
+      document.querySelectorAll(`.size-btn-${productId}`).forEach(b => b.classList.remove('bg-black', 'text-white'));
+      btn.classList.add('bg-black', 'text-white');
+      
+      selectedSizes[productId] = size;
+      
+      const buyBtn = document.getElementById(`buy-btn-${productId}`);
+      buyBtn.disabled = false;
+      buyBtn.className = "w-full bg-blue-600 text-white py-2 rounded-lg font-bold";
+      buyBtn.innerText = "Замовити в ЛС";
+    }
+
+    function orderProduct(title, price) {
+      const size = selectedSizes[Date.now()] || "не вказано";
+      const text = encodeURIComponent(`Вітаю! Хочу замовити:\nТовар: ${title}\nЦіна: ${price} грн\nРозмір: ${size}`);
+      tg.openTelegramLink(`https://t.me/${SELLER_USERNAME}?text=${text}`);
+    }
+
+    renderCatalog();
+  </script>
+</body>
+</html>
